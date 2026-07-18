@@ -1,10 +1,14 @@
 """Conversation memory service.
 
-This module defines ``MemoryService``, the future entry point for storing
-and retrieving memory associated with a conversation or a user (e.g.
-long-term facts, summaries, preferences). At this stage the class only
-defines its intended public API; no storage backend or business logic has
-been implemented yet.
+This module defines ``MemoryService``, responsible for storing and
+retrieving the message history of a conversation, scoped by session.
+
+The current implementation stores history in a plain Python dictionary
+kept in process memory. This is intentionally a temporary storage
+strategy — it does not survive process restarts and is not shared across
+multiple processes/workers. It exists to unblock ``ConversationService``
+now; a persistent backend (e.g. Redis) is expected to replace it later
+without requiring changes to ``MemoryService``'s public interface.
 """
 
 from __future__ import annotations
@@ -13,55 +17,58 @@ from app.ai.conversation.models import ConversationMessage
 
 
 class MemoryService:
-    """Manages long-term and short-term memory for conversations.
+    """Manages conversation history, keyed by session.
 
-    ``MemoryService`` is intended to abstract away *how* and *where*
-    conversational memory is persisted (e.g. in a database, vector store,
-    or cache) from the rest of the AI Core. Consumers of this class should
-    depend only on its public interface, not on any specific storage
-    mechanism, which keeps the storage backend free to change later
-    without affecting callers.
+    ``MemoryService`` abstracts away *how* and *where* conversation
+    history is persisted from the rest of the AI Core. Consumers (such as
+    ``ConversationService``) depend only on this public interface, not on
+    the storage mechanism, which keeps the storage backend free to change
+    later (e.g. to Redis) without affecting callers.
 
-    No storage backend or global/singleton state is used: each
-    ``MemoryService`` instance is expected to be explicitly constructed
-    and, once implemented, configured with whatever storage dependency it
-    needs via its constructor.
-
-    No business logic is implemented yet. Every public method currently
-    raises ``NotImplementedError`` and will be filled in during a later
-    iteration.
+    Each ``MemoryService`` instance owns and manages its own internal
+    state — a ``dict[str, list[ConversationMessage]]`` mapping a session
+    id to its ordered message history. There is no global or singleton
+    state: the dictionary lives on the instance, created fresh in
+    ``__init__``, so multiple independent ``MemoryService`` instances
+    never share history.
     """
 
-    async def remember(self, message: ConversationMessage) -> None:
-        """Persist a message (or facts derived from it) into memory.
+    def __init__(self) -> None:
+        """Initialize an empty, in-memory history store."""
+        self._sessions: dict[str, list[ConversationMessage]] = {}
+
+    async def get_history(self, session_id: str) -> list[ConversationMessage]:
+        """Return the message history for a session.
 
         Args:
-            message: The conversation message to remember.
-
-        Raises:
-            NotImplementedError: Always, at this stage of development.
-        """
-        raise NotImplementedError()
-
-    async def recall(self, query: str) -> list[ConversationMessage]:
-        """Retrieve memory entries relevant to a given query.
-
-        Args:
-            query: A natural-language query used to search stored memory.
+            session_id: The unique identifier of the conversation
+                session.
 
         Returns:
-            A list of ``ConversationMessage`` instances relevant to the
-            query.
-
-        Raises:
-            NotImplementedError: Always, at this stage of development.
+            A list of ``ConversationMessage`` instances in chronological
+            order. Returns an empty list for a session that has no
+            history yet (this does not create an entry for the session).
         """
-        raise NotImplementedError()
+        return list(self._sessions.get(session_id, []))
 
-    async def clear(self) -> None:
-        """Clear all stored memory managed by this service instance.
+    async def add_message(self, session_id: str, message: ConversationMessage) -> None:
+        """Append a message to a session's history.
 
-        Raises:
-            NotImplementedError: Always, at this stage of development.
+        If the session does not yet exist, it is created implicitly.
+
+        Args:
+            session_id: The unique identifier of the conversation
+                session.
+            message: The message to append to the session's history.
         """
-        raise NotImplementedError()
+        self._sessions.setdefault(session_id, []).append(message)
+
+    async def clear(self, session_id: str) -> None:
+        """Remove all stored history for a session.
+
+        Args:
+            session_id: The unique identifier of the conversation
+                session to clear. Clearing a session that has no stored
+                history is a no-op.
+        """
+        self._sessions.pop(session_id, None)
