@@ -1,12 +1,19 @@
 """System prompt definitions.
 
-This module will hold the system prompt(s) used to instruct the AI
-assistant on its role, tone, and constraints. No prompt content has been
-authored yet — only a placeholder accessor is defined so that other
-modules can depend on a stable import path from the start.
+This module holds the system prompt used to instruct the AI assistant on
+its role, tone, and constraints. The current prompt is intentionally
+minimal and generic — refining it (tone, sales-specific instructions,
+guardrails, etc.) is left for later iterations. It exists as a single,
+stable place ``ConversationService`` can depend on rather than hardcoding
+prompt text itself.
 """
 
 from __future__ import annotations
+
+_DEFAULT_SYSTEM_PROMPT = (
+    "You are the VoiceFlow AI assistant. Respond helpfully, clearly, and "
+    "honestly to the user's messages."
+)
 
 
 def get_system_prompt() -> str:
@@ -14,9 +21,5 @@ def get_system_prompt() -> str:
 
     Returns:
         The system prompt text.
-
-    Raises:
-        NotImplementedError: Always, at this stage of development. The
-            actual prompt content will be added in a later iteration.
     """
-    raise NotImplementedError()
+    return _DEFAULT_SYSTEM_PROMPT
